@@ -1,0 +1,22 @@
+# Google Cloud Build CI/CD & Golden Dataset Regression Pipeline
+steps:
+  - name: "python:3.12-slim"
+    id: "unit-tests"
+    entrypoint: "python3"
+    args: ["-m", "unittest", "discover", "-s", "tests", "-v"]
+
+  - name: "python:3.12-slim"
+    id: "golden-dataset-evaluation"
+    entrypoint: "python3"
+    args: ["evals/run_eval.py", "--min-score", "0.95"]
+
+  - name: "gcr.io/cloud-builders/docker"
+    id: "build-container-image"
+    args:
+      - "build"
+      - "-t"
+      - "${_REGION}-docker.pkg.dev/${PROJECT_ID}/agents/kuwait-cal-agent:${SHORT_SHA}"
+      - "."
+
+substitutions:
+  _REGION: "me-central1"

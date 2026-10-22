@@ -1,4 +1,4 @@
-"""Stage 1: Parallel data-ingestion FunctionNodes for the Kuwait CAL Workflow."""
+"""Stage 1: Parallel data-ingestion FunctionNodes & Context Compaction for the Kuwait CAL Workflow."""
 
 from __future__ import annotations
 
@@ -6,6 +6,8 @@ from datetime import datetime, timezone
 from typing import Any
 
 from .._adk_compat import Context, Event, node
+from ..memory.compaction import ContextCompactor
+from ..observability.telemetry import traced_node
 from ..tools.google_workspace_cli import (
     ALOTAIBI_MINUTES_DOC_ID,
     CAL_OVERVIEW_DOC_ID,
@@ -21,8 +23,14 @@ from ..tools.google_workspace_cli import (
     read_google_slides,
 )
 
+_COMPACTOR = ContextCompactor()
+
 
 @node(name="collect_agenda_and_emails")
+@traced_node(
+    "collect_agenda_and_emails",
+    "Ingest Willem's Google Calendar 14-day agenda, Inbox, Sent Mail, and Gemini Meet Notes",
+)
 def collect_agenda_and_emails(node_input: str) -> Event:
   """Collects Willem's Google Calendar agenda, Inbox, Sent Mail, and Gemini Meet Notes."""
   agenda = fetch_calendar_agenda(days_ahead=14, days_behind=7)
@@ -44,11 +52,19 @@ def collect_agenda_and_emails(node_input: str) -> Event:
 
 
 @node(name="collect_afa_consumption")
+@traced_node(
+    "collect_afa_consumption",
+    "Ingest Commit Period 3 (CP3) GCP, PSO, Workspace, PSF, TIF, and Credit trackers from Google Sheets",
+)
 def collect_afa_consumption(node_input: str) -> Event:
   """Collects Commit Period 3 (CP3) GCP, PSO, Workspace, PSF, TIF, and Credit trackers."""
   del node_input
-  commit_sheet = read_google_sheet_range(COMMIT_ATTAINMENT_SHEET_ID, "Commit attainment!A1:N40")
-  incentives_sheet = read_google_sheet_range(COMMIT_ATTAINMENT_SHEET_ID, "Incentives!A1:M50")
+  commit_sheet = read_google_sheet_range(
+      COMMIT_ATTAINMENT_SHEET_ID, "Commit attainment!A1:N40"
+  )
+  incentives_sheet = read_google_sheet_range(
+      COMMIT_ATTAINMENT_SHEET_ID, "Incentives!A1:M50"
+  )
   psf_sheet = read_google_sheet_range(PSF_TIF_SHEET_ID, "PSF!A1:P50")
   tif_sheet = read_google_sheet_range(PSF_TIF_SHEET_ID, "TIF!A1:P40")
   payload = {
@@ -61,6 +77,10 @@ def collect_afa_consumption(node_input: str) -> Event:
 
 
 @node(name="collect_project_and_gov_docs")
+@traced_node(
+    "collect_project_and_gov_docs",
+    "Ingest Go Links, CAL overview doc, Alotaibi minutes, KW Weekly deck, and Delivery Board",
+)
 def collect_project_and_gov_docs(node_input: str) -> Event:
   """Collects Go Links, CAL overview doc, Alotaibi minutes, KW Weekly deck, and Delivery Board."""
   del node_input
@@ -80,11 +100,17 @@ def collect_project_and_gov_docs(node_input: str) -> Event:
 
 
 @node(name="collect_kuwait_innovation_context")
+@traced_node(
+    "collect_kuwait_innovation_context",
+    "Load New Kuwait Vision 2035 & CAIT 3-Layer National AI Factory architecture context",
+)
 def collect_kuwait_innovation_context(node_input: str) -> Event:
   """Provides Kuwait Vision 2035 & 3-Layer National AI Factory context for weekly ideation."""
   del node_input
   payload = {
-      "vision_framework": "New Kuwait Vision 2035 & CAIT 3-Layer National AI Factory (2027)",
+      "vision_framework": (
+          "New Kuwait Vision 2035 & CAIT 3-Layer National AI Factory (2027)"
+      ),
       "layers": [
           "Layer 1: Nationwide Citizen (PACI Mobile ID / Sahel) & Civil Servant (CSC 1,200 VMs) Agents",
           "Layer 2: Entity-Specific Agents (MoF, CAPT, MoE, KU, MoJ, MoH)",
@@ -96,11 +122,24 @@ def collect_kuwait_innovation_context(node_input: str) -> Event:
 
 
 @node(name="store_joined_context")
+@traced_node(
+    "store_joined_context",
+    "Compact joined Google Workspace context within token budget and persist to session state",
+)
 def store_joined_context(ctx: Context, node_input: dict[str, Any]) -> Event:
-  """Stores the joined outputs from all 4 Stage-1 data collectors into session state."""
+  """Compacts and stores joined outputs from all 4 Stage-1 data collectors into session state."""
   del ctx
+  compacted_context, compaction_metrics = _COMPACTOR.compact_workspace_context(
+      node_input
+  )
   return Event(
-      message="Completed parallel ingestion of Calendar, Gmail, Meet Notes, AFA Sheets, and Governance Docs.",
-      output=node_input,
-      state={"raw_context": node_input},
+      message=(
+          "Completed parallel ingestion and token-budget context compaction "
+          f"(ratio={compaction_metrics['compression_ratio']})."
+      ),
+      output=compacted_context,
+      state={
+          "raw_context": compacted_context,
+          "compaction_metrics": compaction_metrics,
+      },
   )

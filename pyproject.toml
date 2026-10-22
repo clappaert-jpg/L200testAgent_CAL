@@ -4,18 +4,25 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "kuwait-cal-agent"
-version = "1.0.0"
-description = "Kuwait Consulting Account Lead (CAL) Executive Priority Dashboard Agent in Python ADK (google-adk 2.x)"
+version = "2.0.0"
+description = "Kuwait Consulting Account Lead (CAL) Executive Priority Dashboard Agent in Python ADK 2.x with Strategic Model Routing (gemini-3.8-flash & gemini-3.1-pro), Persistent SQLite Session Memory, Context Compaction, Async Memory Consolidation, OpenTelemetry Tracing, PII Redaction, and Golden Dataset Evaluation"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 authors = [
   { name = "Willem Clappaert", email = "clappaert@google.com" }
 ]
 dependencies = [
-  "google-adk>=2.6.0",
+  "google-adk>=2.0.0",
   "google-genai>=1.0.0",
   "pydantic>=2.6.0",
-  "apscheduler>=3.10.4",
+  "opentelemetry-api>=1.24.0",
+  "opentelemetry-sdk>=1.24.0",
+  "python-json-logger>=2.0.7",
+  "structlog>=24.1.0",
+  "sqlalchemy>=2.0.0",
+  "aiosqlite>=0.20.0",
+  "tenacity>=8.2.0",
+  "apscheduler>=3.10.0",
 ]
 
 [project.optional-dependencies]
@@ -24,7 +31,6 @@ dev = [
   "pytest-asyncio>=0.23.0",
 ]
 
-[tool.pytest.ini_options]
-asyncio_mode = "auto"
-testpaths = ["tests"]
-pythonpath = ["."]
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["kuwait_cal_agent*"]

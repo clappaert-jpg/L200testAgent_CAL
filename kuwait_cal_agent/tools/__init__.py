@@ -1,23 +1,83 @@
-"""Tools for Google Workspace CLI integration, Slide rendering, and Gmail notifications."""
+"""Tools package for Kuwait CAL Executive Priority Dashboard Agent."""
 
-from .gmail_sender import send_dashboard_digest_to_willem, stage_or_send_colleague_reminder
+from .gmail_sender import (
+    ALLOWED_SELF_RECIPIENT,
+    AUTHORIZED_SELF_EMAIL,
+    colleague_reminder_tool,
+    self_digest_email_tool,
+    send_dashboard_digest_to_willem,
+    stage_or_send_colleague_reminder,
+)
 from .google_workspace_cli import (
+    ALOTAIBI_MINUTES_DOC_ID,
+    CAL_OVERVIEW_DOC_ID,
+    COMMIT_ATTAINMENT_SHEET_ID,
+    DELIVERY_BOARD_DECK_ID,
+    GDOCS_BIN,
+    GCAL_BIN,
+    GMAIL_BIN,
+    GO_LINKS_DOC_ID,
+    GSHEETS_BIN,
+    GSLIDES_BIN,
+    KW_WEEKLY_DECK_ID,
+    PSF_TIF_SHEET_ID,
+    calendar_agenda_tool,
     fetch_calendar_agenda,
     fetch_gmail_messages,
+    gmail_search_tool,
+    google_doc_read_tool,
+    google_sheet_read_tool,
+    google_slides_read_tool,
     read_google_doc,
     read_google_sheet_range,
     read_google_slides,
 )
-from .slides_renderer import build_six_slide_batch_ops, create_and_populate_dashboard_slides
+from .resilience import (
+    FunctionToolWrapper,
+    GLOBAL_IDEMPOTENCY_LEDGER,
+    IdempotencyLedger,
+    is_transient_error,
+    retry_with_backoff,
+)
+from .slides_renderer import (
+    build_six_slide_batch_ops,
+    create_and_populate_dashboard_slides,
+)
 
 __all__ = [
+    "ALLOWED_SELF_RECIPIENT",
+    "ALOTAIBI_MINUTES_DOC_ID",
+    "AUTHORIZED_SELF_EMAIL",
+    "CAL_OVERVIEW_DOC_ID",
+    "COMMIT_ATTAINMENT_SHEET_ID",
+    "DELIVERY_BOARD_DECK_ID",
+    "FunctionToolWrapper",
+    "GCAL_BIN",
+    "GDOCS_BIN",
+    "GLOBAL_IDEMPOTENCY_LEDGER",
+    "GMAIL_BIN",
+    "GO_LINKS_DOC_ID",
+    "GSHEETS_BIN",
+    "GSLIDES_BIN",
+    "IdempotencyLedger",
+    "KW_WEEKLY_DECK_ID",
+    "PSF_TIF_SHEET_ID",
+    "build_six_slide_batch_ops",
+    "calendar_agenda_tool",
+    "colleague_reminder_tool",
+    "create_and_populate_dashboard_slides",
     "fetch_calendar_agenda",
     "fetch_gmail_messages",
+    "gmail_search_tool",
+    "google_doc_read_tool",
+    "google_sheet_read_tool",
+    "google_slides_read_tool",
+    "is_transient_error",
     "read_google_doc",
     "read_google_sheet_range",
     "read_google_slides",
-    "build_six_slide_batch_ops",
-    "create_and_populate_dashboard_slides",
+    "retry_with_backoff",
+    "self_digest_email_tool",
     "send_dashboard_digest_to_willem",
     "stage_or_send_colleague_reminder",
 ]

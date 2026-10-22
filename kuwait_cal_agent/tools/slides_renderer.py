@@ -18,7 +18,9 @@ import subprocess
 import tempfile
 from typing import Any
 
+from ..observability.telemetry import traced_tool
 from .google_workspace_cli import GSLIDES_BIN
+from .resilience import retry_with_backoff
 
 
 def build_six_slide_batch_ops(payload: dict[str, Any]) -> list[dict[str, Any]]:
@@ -402,6 +404,11 @@ def build_six_slide_batch_ops(payload: dict[str, Any]) -> list[dict[str, Any]]:
   return ops
 
 
+@traced_tool(
+    "create_and_populate_dashboard_slides",
+    "Create and populate a 6-slide Kuwait CAL Executive Dashboard in Google Slides via batch mutation",
+)
+@retry_with_backoff(max_attempts=3, base_delay_sec=0.05)
 def create_and_populate_dashboard_slides(
     payload: dict[str, Any],
     export_thumbnails: bool = False,

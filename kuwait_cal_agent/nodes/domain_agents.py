@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import Any
 
 from .._adk_compat import Context, LlmAgent
+from ..model_routing import FLASH_MODEL, ModelRouter, PRO_MODEL
 from ..schemas import (
     AfaConsumptionOutput,
     ColleagueReminderItem,
@@ -424,12 +425,17 @@ def _default_innovation_radar(ctx: Context, node_input: Any) -> InnovationRadarO
   return InnovationRadarOutput(ideas=ideas)
 
 
+_TODO_ROUTE = ModelRouter.select_model("todo_and_reminders_agent")
 todo_and_reminders_agent = LlmAgent(
     name="todo_and_reminders_agent",
-    model="gemini-3.5-flash",
+    model=_TODO_ROUTE.selected_model,  # gemini-3.8-flash (Fast Extraction Tier)
     mode="single_turn",
     include_contents="none",
-    description="Synthesizes Willem's Top 10 To-Do list (This Week vs. Next Week + Due Date) and 2-5 day Colleague Reminder Tracker.",
+    description=(
+        f"[{_TODO_ROUTE.tier.value}: {_TODO_ROUTE.selected_model}] "
+        "Synthesizes Willem's Top 10 To-Do list (This Week vs. Next Week + Due Date) "
+        "and 2-5 day Colleague Reminder Tracker."
+    ),
     instruction=(
         "Extract Willem Clappaert's Top 10 Priority To-Do items from his Calendar, "
         "Gmail, and Meet transcripts (strictly capped at 10 items, tagged THIS WEEK "
@@ -442,12 +448,16 @@ todo_and_reminders_agent = LlmAgent(
     fallback_handler=_default_todo_and_reminders,
 )
 
+_PSO_ROUTE = ModelRouter.select_model("pso_risks_agent")
 pso_risks_agent = LlmAgent(
     name="pso_risks_agent",
-    model="gemini-3.5-flash",
+    model=_PSO_ROUTE.selected_model,  # gemini-3.1-pro (Deep Reasoning Tier)
     mode="single_turn",
     include_contents="none",
-    description="Synthesizes PSO project status, KPIs, and RAG risks/issues across Kuwait workstreams.",
+    description=(
+        f"[{_PSO_ROUTE.tier.value}: {_PSO_ROUTE.selected_model}] "
+        "Synthesizes PSO project status, KPIs, and RAG risks/issues across Kuwait workstreams."
+    ),
     instruction=(
         "Synthesize PSO project portfolio status, KPIs, and critical delivery/commercial "
         "risks across ServiceNow ($60M MP cap), Migration Factory (SOW2/SOW3 & MoJ KIN), "
@@ -459,12 +469,16 @@ pso_risks_agent = LlmAgent(
     fallback_handler=_default_pso_portfolio,
 )
 
+_AFA_ROUTE = ModelRouter.select_model("afa_financials_agent")
 afa_financials_agent = LlmAgent(
     name="afa_financials_agent",
-    model="gemini-3.5-flash",
+    model=_AFA_ROUTE.selected_model,  # gemini-3.8-flash (Fast Extraction Tier)
     mode="single_turn",
     include_contents="none",
-    description="Computes Commit Period 3 (CP3) attainment, roll-overs, consumed, and gaps for GCP, PSO, GWS, PSF, TIF, and Credits.",
+    description=(
+        f"[{_AFA_ROUTE.tier.value}: {_AFA_ROUTE.selected_model}] "
+        "Computes Commit Period 3 (CP3) attainment, roll-overs, consumed, and gaps for GCP, PSO, GWS, PSF, TIF, and Credits."
+    ),
     instruction=(
         "Compute exact Commit Period 3 (Feb 27, 2026 – Feb 26, 2027) attainment, "
         "CP2 roll-overs/shortfalls, net paid amounts, and gaps for GCP, PSO, and Workspace, "
@@ -475,12 +489,16 @@ afa_financials_agent = LlmAgent(
     fallback_handler=_default_afa_consumption,
 )
 
+_INNOVATION_ROUTE = ModelRouter.select_model("innovation_radar_agent")
 innovation_radar_agent = LlmAgent(
     name="innovation_radar_agent",
-    model="gemini-3.5-flash",
+    model=_INNOVATION_ROUTE.selected_model,  # gemini-3.1-pro (Deep Reasoning Tier)
     mode="single_turn",
     include_contents="none",
-    description="Generates 3 weekly new innovative digital transformation & Gemini Enterprise ideas for the Kuwait Government.",
+    description=(
+        f"[{_INNOVATION_ROUTE.tier.value}: {_INNOVATION_ROUTE.selected_model}] "
+        "Generates 3 weekly new innovative digital transformation & Gemini Enterprise ideas for the Kuwait Government."
+    ),
     instruction=(
         "Generate 3 net-new, high-impact digital transformation and Gemini Enterprise "
         "use cases for the Kuwait Government aligned with New Kuwait Vision 2035 and "

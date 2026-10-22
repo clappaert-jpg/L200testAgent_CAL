@@ -1,10 +1,14 @@
-"""Stage 5: Self-Email Notification & Human-in-the-Loop (`RequestInput`) Colleague Reminder Gate."""
+"""Stage 5: Self-Email Notification, HITL (`RequestInput`) Consent Gate, and Async Memory Consolidation."""
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from .._adk_compat import Context, Event, RequestInput, node
+from ..memory.consolidation import AsyncMemoryConsolidator
+from ..observability.logging import log_intent, log_outcome
+from ..observability.telemetry import traced_node
 from ..schemas import ReminderConsentDecision
 from ..tools.gmail_sender import (
     AUTHORIZED_SELF_EMAIL,
@@ -12,12 +16,24 @@ from ..tools.gmail_sender import (
     stage_or_send_colleague_reminder,
 )
 
+_MEMORY_CONSOLIDATOR = AsyncMemoryConsolidator()
+
 
 @node(name="send_self_digest_email_node")
-def send_self_digest_email_node(ctx: Context, node_input: dict[str, Any]) -> Event:
+@traced_node(
+    "send_self_digest_email_node",
+    "Send verified 6-slide presentation link exclusively to clappaert@google.com",
+)
+def send_self_digest_email_node(
+    ctx: Context, node_input: dict[str, Any]
+) -> Event:
   """Sends the presentation link & digest email ONLY to Willem (`clappaert@google.com`)."""
   payload = ctx.state.get("dashboard_payload", {})
-  judge_eval = node_input if isinstance(node_input, dict) and "overall_score" in node_input else ctx.state.get("judge_evaluation", {})
+  judge_eval = (
+      node_input
+      if isinstance(node_input, dict) and "overall_score" in node_input
+      else ctx.state.get("judge_evaluation", {})
+  )
   email_res = send_dashboard_digest_to_willem(
       payload=payload,
       judge_result=judge_eval,
@@ -35,7 +51,9 @@ def send_self_digest_email_node(ctx: Context, node_input: dict[str, Any]) -> Eve
 
 
 @node(name="colleague_reminder_consent_gate")
-async def colleague_reminder_consent_gate(ctx: Context, node_input: dict[str, Any]):
+async def colleague_reminder_consent_gate(
+    ctx: Context, node_input: dict[str, Any]
+):
   """Human-in-the-Loop consent gate (`RequestInput`) for 2-5 day colleague reminder emails.
 
   - In unattended Sunday 6am scheduled mode (`ctx.state.get("unattended_schedule") == True`),
@@ -49,7 +67,24 @@ async def colleague_reminder_consent_gate(ctx: Context, node_input: dict[str, An
   reminders = payload.get("todo_and_reminders", {}).get("reminders", [])
   due_reminders = [r for r in reminders if r.get("in_2_to_5_day_window")]
 
+  log_intent(
+      component="hitl_consent_gate",
+      action="colleague_reminder_consent_gate",
+      intent="Evaluate colleague reminder consent gate before any external email action",
+      metadata={
+          "unattended_schedule": bool(ctx.state.get("unattended_schedule", False)),
+          "due_reminders_count": len(due_reminders),
+      },
+  )
+
   if ctx.state.get("unattended_schedule", False):
+    log_outcome(
+        component="hitl_consent_gate",
+        action="colleague_reminder_consent_gate",
+        outcome="Unattended Sunday schedule: held all colleague reminders in staging (0 external sends)",
+        status="SUCCESS",
+        metrics={"colleague_emails_sent": 0, "staged_count": len(due_reminders)},
+    )
     yield Event(
         message=(
             f"Unattended Sunday 6:00 AM run complete. Presentation link sent to "
@@ -74,6 +109,12 @@ async def colleague_reminder_consent_gate(ctx: Context, node_input: dict[str, An
     decision = ctx.resume_inputs[interrupt_id]
     if isinstance(decision, str):
       decision = {"approved_colleague_emails": [], "delivery_mode": decision}
+    log_outcome(
+        component="hitl_consent_gate",
+        action="colleague_reminder_consent_gate",
+        outcome="Resumed workflow with explicit human consent decision",
+        status="SUCCESS",
+    )
     yield Event(
         message=f"Received explicit user consent decision: {decision}",
         output=decision,
@@ -84,6 +125,12 @@ async def colleague_reminder_consent_gate(ctx: Context, node_input: dict[str, An
     )
     return
 
+  log_outcome(
+      component="hitl_consent_gate",
+      action="colleague_reminder_consent_gate",
+      outcome=f"Paused workflow via RequestInput ({interrupt_id}) awaiting human consent",
+      status="PAUSED_FOR_INPUT",
+  )
   yield RequestInput(
       interrupt_id=interrupt_id,
       message=(
@@ -96,13 +143,34 @@ async def colleague_reminder_consent_gate(ctx: Context, node_input: dict[str, An
   )
 
 
+def _trigger_background_memory_consolidation(ctx: Context) -> None:
+  """Schedules async memory consolidation into the persistent SQLite knowledge bank."""
+  session_id = str(ctx.state.get("session_id", "default_cal_session"))
+  try:
+    loop = asyncio.get_running_loop()
+    if loop.is_running():
+      _MEMORY_CONSOLIDATOR.schedule_consolidation(session_id, ctx.state)
+  except RuntimeError:
+    asyncio.run(
+        _MEMORY_CONSOLIDATOR.consolidate_session_async(session_id, ctx.state)
+    )
+
+
 @node(name="dispatch_approved_reminders_node")
-def dispatch_approved_reminders_node(ctx: Context, node_input: dict[str, Any]) -> Event:
+@traced_node(
+    "dispatch_approved_reminders_node",
+    "Dispatch only human-approved colleague reminders and trigger background async memory consolidation",
+)
+def dispatch_approved_reminders_node(
+    ctx: Context, node_input: dict[str, Any]
+) -> Event:
   """Dispatches or creates drafts ONLY for colleague reminders explicitly approved by Willem."""
   if node_input.get("mode") == "unattended_schedule":
+    _trigger_background_memory_consolidation(ctx)
     return Event(
         message="Unattended schedule completed with 0 colleague emails dispatched.",
         output=node_input,
+        state={"memory_consolidation_scheduled": True},
     )
 
   delivery_mode = node_input.get("delivery_mode", "skip_all")
@@ -126,14 +194,19 @@ def dispatch_approved_reminders_node(ctx: Context, node_input: dict[str, Any]) -
         )
         dispatched.append(res)
 
+  _trigger_background_memory_consolidation(ctx)
   summary = {
       "delivery_mode": delivery_mode,
       "approved_count": len(dispatched),
       "dispatched": dispatched,
       "presentation_url": payload.get("presentation_url", ""),
+      "memory_consolidation_scheduled": True,
   }
   return Event(
       message=f"Processed colleague reminders with explicit consent: {len(dispatched)} {delivery_mode}.",
       output=summary,
-      state={"colleague_dispatch_summary": summary},
+      state={
+          "colleague_dispatch_summary": summary,
+          "memory_consolidation_scheduled": True,
+      },
   )

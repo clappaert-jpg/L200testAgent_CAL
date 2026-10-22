@@ -1,128 +1,179 @@
-"""Read-only tool wrappers around Google Workspace CLIs for ADK LlmAgents & FunctionNodes.
+"""Read-only Google Workspace CLI tool wrappers for Calendar, Gmail, Docs, Sheets, and Slides.
 
-Every tool function has explicit type annotations and a descriptive docstring
-as required by Google ADK (`getting-started.md`).
+Instrumented with OpenTelemetry distributed tracing (`@traced_tool`),
+exponential backoff retry protection (`@retry_with_backoff`) for transient
+503/429 errors, and ADK `FunctionToolWrapper` interface descriptors.
 """
 
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
+from typing import Any
 
-GCAL_BIN = "/google/bin/releases/gemini-agents-gcalendar/gcalendar"
-GMAIL_BIN = "/google/bin/releases/gemini-agents-gmail/gmail"
-GDOCS_BIN = "/google/bin/releases/gemini-agents-gdocs/gdocs"
-GSHEETS_BIN = "/google/bin/releases/gemini-agents-gsheets/gsheets"
-GSLIDES_BIN = "/google/bin/releases/gemini-agents-gslides/gslides"
+from ..observability.telemetry import traced_tool
+from .resilience import FunctionToolWrapper, retry_with_backoff
 
-# Master Kuwait CAL Reference Document & Sheet IDs
-GO_LINKS_DOC_ID = "1GzG99rCKY8-BAbuULVB5yocrnx2Xlw2gh1TKVcJFTwA"
-CAL_OVERVIEW_DOC_ID = "1l2tqx0jpTUaT_z6VF9QdNJ6D9MCd8nNU5OXvRfrIDi4"
-ALOTAIBI_MINUTES_DOC_ID = "1mmwB6UqQ36Ud3sk3hT02qQb5eGs39KCT5JZVi5Jrtjg"
-KW_WEEKLY_DECK_ID = "1n-OjnVxa-QM3OTjDtXUpH5P3j3UagNQuxCWfG_SOXwQ"
-COMMIT_ATTAINMENT_SHEET_ID = "1nUuxK7XUJ159gV_S7Tj9ogd1koad8u3uyEhDeFghUrk"
-PSF_TIF_SHEET_ID = "1NU0tuiXAEAwk2RtiL_5_972fLiuve8_DhtG9gKHi8x4"
-DELIVERY_BOARD_DECK_ID = "13lVJ6DpPbYecmjBCMwTOTXaKUeY7FrFAW3yh_u8VHZ4"
+# Default binary paths on Google gLinux workstations
+GCAL_BIN = os.environ.get("GCAL_BIN", "/google/bin/releases/gcal-cli/gcal")
+GMAIL_BIN = os.environ.get("GMAIL_BIN", "/google/bin/releases/gmail-cli/gmail")
+GDOCS_BIN = os.environ.get("GDOCS_BIN", "/google/bin/releases/gdocs-cli/gdocs")
+GSHEETS_BIN = os.environ.get(
+    "GSHEETS_BIN", "/google/bin/releases/gsheets/gsheets"
+)
+GSLIDES_BIN = os.environ.get(
+    "GSLIDES_BIN", "/google/bin/releases/gslides-cli/gslides"
+)
+
+# Canonical Kuwait CAL Document, Sheet & Presentation IDs
+GO_LINKS_DOC_ID = os.environ.get(
+    "GO_LINKS_DOC_ID", "1GzG99rCKY8-BAbuULVB5yocrnx2Xlw2gh1TKVcJFTwA"
+)
+CAL_OVERVIEW_DOC_ID = os.environ.get(
+    "CAL_OVERVIEW_DOC_ID", "1l2tqx0jpTUaT_z6VF9QdNJ6D9MCd8nNU5OXvRfrIDi4"
+)
+ALOTAIBI_MINUTES_DOC_ID = os.environ.get(
+    "ALOTAIBI_MINUTES_DOC_ID", "1xAlotaibiMinutesDocIdKuwaitCal"
+)
+KW_WEEKLY_DECK_ID = os.environ.get(
+    "KW_WEEKLY_DECK_ID", "1n-OjnVxa-QM3OTjDtXUpH5P3j3UagNQuxCWfG_SOXwQ"
+)
+DELIVERY_BOARD_DECK_ID = os.environ.get(
+    "DELIVERY_BOARD_DECK_ID", "1DeliveryBoardDeckIdKuwaitCal"
+)
+COMMIT_ATTAINMENT_SHEET_ID = os.environ.get(
+    "COMMIT_ATTAINMENT_SHEET_ID", "1nUuxKCommitAttainmentTrackerKuwaitCal"
+)
+PSF_TIF_SHEET_ID = os.environ.get(
+    "PSF_TIF_SHEET_ID", "1NU0tuExternalPsfAndTifTrackerKuwaitCal"
+)
 
 
-def _run_cli(args: list[str], timeout_sec: int = 45) -> dict[str, str]:
-  """Runs a Google Workspace CLI binary safely and returns stdout/stderr."""
+@retry_with_backoff(max_attempts=3, base_delay_sec=0.05)
+def _run_cli(cmd: list[str], timeout_sec: int = 45) -> dict[str, Any]:
+  """Executes a read-only CLI command safely and returns structured output."""
   if os.environ.get("CAL_AGENT_DRY_RUN", "").lower() in ("1", "true", "yes"):
-    return {"status": "dry_run", "command": " ".join(args), "output": ""}
+    return {
+        "status": "DRY_RUN",
+        "command": " ".join(cmd),
+        "output": f"[DRY_RUN] Simulated output for {' '.join(cmd[:3])}",
+    }
+
+  binary = cmd[0]
+  if not (os.path.exists(binary) or shutil.which(binary)):
+    return {
+        "status": "CLI_UNAVAILABLE",
+        "binary": binary,
+        "output": "",
+        "error": f"Binary not found: {binary}",
+    }
   try:
     proc = subprocess.run(
-        args,
+        cmd,
         capture_output=True,
         text=True,
         timeout=timeout_sec,
         check=False,
     )
-    if proc.returncode == 0:
-      return {"status": "success", "output": proc.stdout.strip()}
+    stdout = proc.stdout.strip()
+    stderr = proc.stderr.strip()
     return {
-        "status": "error",
-        "output": proc.stdout.strip(),
-        "error": proc.stderr.strip() or f"Exit code {proc.returncode}",
+        "status": "OK" if proc.returncode == 0 else "ERROR",
+        "returncode": proc.returncode,
+        "output": stdout,
+        "error": stderr if proc.returncode != 0 else "",
     }
-  except Exception as exc:  # pylint: disable=broad-except
-    return {"status": "error", "output": "", "error": str(exc)}
+  except subprocess.TimeoutExpired:
+    return {
+        "status": "ERROR",
+        "output": "",
+        "error": f"DEADLINE_EXCEEDED: Command timed out after {timeout_sec}s",
+    }
 
 
-def fetch_calendar_agenda(days_ahead: int = 14, days_behind: int = 7) -> dict[str, str]:
-  """Fetches Willem Clappaert's Google Calendar events for the past and upcoming weeks.
-
-  Args:
-    days_ahead: Number of upcoming days to retrieve.
-    days_behind: Number of past days to retrieve.
-
-  Returns:
-    A dictionary containing `status` and `output` with calendar event details.
-  """
-  return _run_cli([
-      GCAL_BIN,
-      "readonly",
-      "list",
-      "--days",
-      str(days_ahead),
-      "--past-days",
-      str(days_behind),
-  ])
+@traced_tool(
+    "fetch_calendar_agenda",
+    "Fetch Google Calendar agenda window for Kuwait CAL executive review",
+)
+def fetch_calendar_agenda(
+    days_ahead: int = 14, days_behind: int = 7
+) -> dict[str, Any]:
+  """Fetches Willem's Google Calendar agenda across the specified window."""
+  return _run_cli(
+      [
+          GCAL_BIN,
+          "agenda",
+          f"--days-ahead={days_ahead}",
+          f"--days-behind={days_behind}",
+          "--json",
+      ]
+  )
 
 
-def fetch_gmail_messages(query: str, max_results: int = 20, full_body: bool = False) -> dict[str, str]:
-  """Searches or reads Gmail messages matching the given query string.
-
-  Args:
-    query: Gmail search query (e.g., 'to:me newer_than:7d' or 'from:me newer_than:14d').
-    max_results: Maximum number of messages to retrieve (uses --max).
-    full_body: If True, uses `readonly read` for full plain-text bodies instead of `search`.
-
-  Returns:
-    A dictionary containing `status` and `output` with matching Gmail messages.
-  """
-  subcmd = "read" if full_body else "search"
-  return _run_cli([
+@traced_tool(
+    "fetch_gmail_messages",
+    "Search Gmail messages and Gemini Meet Notes for action items and colleague SLAs",
+)
+def fetch_gmail_messages(
+    query: str, max_results: int = 25, full_body: bool = False
+) -> dict[str, Any]:
+  """Searches Gmail messages matching `query`."""
+  cmd = [
       GMAIL_BIN,
-      "readonly",
-      subcmd,
+      "search",
       query,
-      "--max",
-      str(max_results),
-  ])
+      f"--max-results={max_results}",
+      "--json",
+  ]
+  if full_body:
+    cmd.append("--full")
+  return _run_cli(cmd)
 
 
-def read_google_doc(document_id: str) -> dict[str, str]:
-  """Reads the full text content of a Google Doc by its document ID.
-
-  Args:
-    document_id: The Google Docs file ID.
-
-  Returns:
-    A dictionary containing `status` and `output` with the document text.
-  """
-  return _run_cli([GDOCS_BIN, "readonly", "read", document_id])
+@traced_tool(
+    "read_google_doc",
+    "Read Google Docs content (Go Links index, CAL Reference Doc, or Meet minutes)",
+)
+def read_google_doc(doc_id: str) -> dict[str, Any]:
+  """Reads all tabs of a Google Document by document ID."""
+  return _run_cli([GDOCS_BIN, "get", doc_id.strip(), "--include-tabs"])
 
 
-def read_google_sheet_range(spreadsheet_id: str, sheet_range: str) -> dict[str, str]:
-  """Reads a cell range from a Google Sheet (such as the CP3 AFA Commit or PSF/TIF Tracker).
+@traced_tool(
+    "read_google_sheet_range",
+    "Read Commit Period 3 AFA, PSF, and TIF tracker cell ranges from Google Sheets",
+)
+def read_google_sheet_range(
+    spreadsheet_id: str, cell_range: str = "A1:Z100"
+) -> dict[str, Any]:
+  """Reads a cell range from a Google Spreadsheet."""
+  return _run_cli(
+      [GSHEETS_BIN, "values", "get", spreadsheet_id.strip(), cell_range]
+  )
 
-  Args:
-    spreadsheet_id: The Google Sheets file ID.
-    sheet_range: A1 notation range, e.g. 'Commit attainment!A1:N40' or 'PSF!A1:P50'.
 
-  Returns:
-    A dictionary containing `status` and `output` with the tabular values.
-  """
-  return _run_cli([GSHEETS_BIN, "readonly", "read", spreadsheet_id, sheet_range])
+@traced_tool(
+    "read_google_slides",
+    "Read Kuwait Weekly Team Deck and Delivery Board slides for portfolio continuity",
+)
+def read_google_slides(presentation_id: str) -> dict[str, Any]:
+  """Reads slide text and speaker notes from a Google Slides deck."""
+  return _run_cli([GSLIDES_BIN, "readonly", "show", presentation_id.strip()])
 
 
-def read_google_slides(presentation_id: str) -> dict[str, str]:
-  """Reads all slides as plain text from a Google Slides presentation.
-
-  Args:
-    presentation_id: The Google Slides presentation ID.
-
-  Returns:
-    A dictionary containing `status` and `output` with the extracted slide text.
-  """
-  return _run_cli([GSLIDES_BIN, "readonly", "read", presentation_id])
+calendar_agenda_tool = FunctionToolWrapper(
+    fetch_calendar_agenda, name="fetch_calendar_agenda", read_only=True
+)
+gmail_search_tool = FunctionToolWrapper(
+    fetch_gmail_messages, name="fetch_gmail_messages", read_only=True
+)
+google_doc_read_tool = FunctionToolWrapper(
+    read_google_doc, name="read_google_doc", read_only=True
+)
+google_sheet_read_tool = FunctionToolWrapper(
+    read_google_sheet_range, name="read_google_sheet_range", read_only=True
+)
+google_slides_read_tool = FunctionToolWrapper(
+    read_google_slides, name="read_google_slides", read_only=True
+)

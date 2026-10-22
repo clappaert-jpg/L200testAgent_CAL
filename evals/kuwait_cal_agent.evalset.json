@@ -1,0 +1,41 @@
+{
+  "eval_set_id": "kuwait_cal_executive_agent_evalset",
+  "name": "Kuwait CAL Executive Priority Dashboard ADK EvalSet",
+  "description": "ADK-compatible evaluation dataset verifying tool trajectories, rubric compliance, and guardrails.",
+  "eval_cases": [
+    {
+      "eval_id": "sunday_6am_executive_briefing",
+      "conversation": [
+        {
+          "invocation_id": "inv_001",
+          "user_content": {
+            "role": "user",
+            "parts": [
+              {
+                "text": "Run the weekly Kuwait CAL Executive Priority Dashboard, verify with LLM-as-a-Judge, and email the presentation link to clappaert@google.com."
+              }
+            ]
+          },
+          "intermediate_data": {
+            "tool_uses": [
+              {"name": "fetch_calendar_agenda", "args": {"days_ahead": 14, "days_behind": 7}},
+              {"name": "fetch_gmail_messages", "args": {"query": "to:me newer_than:7d", "max_results": 25}},
+              {"name": "read_google_sheet_range", "args": {"spreadsheet_id": "1nUuxKCommitAttainmentTrackerKuwaitCal", "cell_range": "Commit attainment!A1:N40"}},
+              {"name": "read_google_doc", "args": {"doc_id": "1GzG99rCKY8-BAbuULVB5yocrnx2Xlw2gh1TKVcJFTwA"}},
+              {"name": "create_and_populate_dashboard_slides", "args": {"export_thumbnails": false}},
+              {"name": "send_dashboard_digest_to_willem", "args": {"recipient_email": "clappaert@google.com"}}
+            ]
+          },
+          "final_response": {
+            "role": "model",
+            "parts": [
+              {
+                "text": "Unattended schedule completed with 0 colleague emails dispatched."
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

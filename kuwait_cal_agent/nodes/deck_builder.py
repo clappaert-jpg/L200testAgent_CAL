@@ -5,11 +5,16 @@ from __future__ import annotations
 from typing import Any
 
 from .._adk_compat import Context, Event, node
+from ..observability.telemetry import traced_node
 from ..schemas import DashboardPayload
 from ..tools.slides_renderer import create_and_populate_dashboard_slides
 
 
 @node(name="build_slides_deck_node")
+@traced_node(
+    "build_slides_deck_node",
+    "Assemble validated DashboardPayload and render 6-slide executive deck in Google Slides",
+)
 def build_slides_deck_node(ctx: Context, node_input: dict[str, Any]) -> Event:
   """Merges the 4 domain synthesis outputs and builds the 6-slide Google Slides deck."""
   as_of = (
@@ -17,10 +22,16 @@ def build_slides_deck_node(ctx: Context, node_input: dict[str, Any]) -> Event:
       .get("collect_kuwait_innovation_context", {})
       .get("as_of_date", "Oct 22, 2026")
   )
-  todo_rem = node_input.get("todo_and_reminders_agent") or ctx.state.get("todo_and_reminders", {})
+  todo_rem = node_input.get("todo_and_reminders_agent") or ctx.state.get(
+      "todo_and_reminders", {}
+  )
   pso = node_input.get("pso_risks_agent") or ctx.state.get("pso_portfolio", {})
-  afa = node_input.get("afa_financials_agent") or ctx.state.get("afa_consumption", {})
-  innov = node_input.get("innovation_radar_agent") or ctx.state.get("innovation_radar", {})
+  afa = node_input.get("afa_financials_agent") or ctx.state.get(
+      "afa_consumption", {}
+  )
+  innov = node_input.get("innovation_radar_agent") or ctx.state.get(
+      "innovation_radar", {}
+  )
 
   payload = DashboardPayload(
       as_of_date=as_of,
@@ -31,7 +42,9 @@ def build_slides_deck_node(ctx: Context, node_input: dict[str, Any]) -> Event:
       innovation_radar=innov,
   ).model_dump()
 
-  render_res = create_and_populate_dashboard_slides(payload, export_thumbnails=False)
+  render_res = create_and_populate_dashboard_slides(
+      payload, export_thumbnails=False
+  )
   payload["presentation_id"] = render_res["presentation_id"]
   payload["presentation_url"] = render_res["presentation_url"]
   payload["slide_thumbnails"] = render_res.get("slide_thumbnails", [])

@@ -1,0 +1,112 @@
+{
+  "dataset_name": "kuwait_cal_executive_dashboard_golden_v2",
+  "version": "2.0.0",
+  "description": "Golden evaluation dataset for regression testing the Kuwait CAL Executive Priority Dashboard Agent across workflow trajectory, strategic model routing (gemini-3.8-flash & gemini-3.1-pro), persistent SQLite memory/compaction, OpenTelemetry tracing, PII redaction, and HITL guardrails.",
+  "cases": [
+    {
+      "case_id": "eval_01_nominal_sunday_executive_run",
+      "description": "Standard unattended Sunday 06:00 Asia/Kuwait execution.",
+      "initial_state": {
+        "unattended_schedule": true
+      },
+      "user_prompt": "Run the weekly Kuwait CAL Executive Priority Dashboard, verify with LLM-as-a-Judge, and email the presentation link to clappaert@google.com.",
+      "expected_trajectory": [
+        "collect_agenda_and_emails",
+        "collect_afa_consumption",
+        "collect_project_and_gov_docs",
+        "collect_kuwait_innovation_context",
+        "join_raw_context",
+        "store_joined_context",
+        "todo_and_reminders_agent",
+        "pso_risks_agent",
+        "afa_financials_agent",
+        "innovation_radar_agent",
+        "join_dashboard_payload",
+        "build_slides_deck_node",
+        "llm_judge_agent",
+        "route_judge_decision",
+        "send_self_digest_email_node",
+        "colleague_reminder_consent_gate",
+        "dispatch_approved_reminders_node"
+      ],
+      "expected_assertions": {
+        "max_todos": 10,
+        "exact_innovation_ideas": 3,
+        "min_judge_score": 9.0,
+        "self_email_recipient": "clappaert@google.com",
+        "colleague_emails_sent": 0
+      }
+    },
+    {
+      "case_id": "eval_02_self_healing_judge_loop",
+      "description": "First-pass Judge failure triggers gemini-3.1-pro revision loop and passes on second pass.",
+      "initial_state": {
+        "unattended_schedule": true,
+        "force_judge_fail_once": true
+      },
+      "user_prompt": "Generate Kuwait CAL dashboard and self-heal if Judge detects any rubric gap.",
+      "expected_trajectory": [
+        "build_slides_deck_node",
+        "llm_judge_agent",
+        "route_judge_decision",
+        "revise_dashboard_agent",
+        "build_slides_deck_node",
+        "llm_judge_agent",
+        "route_judge_decision",
+        "send_self_digest_email_node"
+      ],
+      "expected_assertions": {
+        "judge_revision_count": 1,
+        "judge_passed": true,
+        "active_revision_model": "gemini-3.1-pro"
+      }
+    },
+    {
+      "case_id": "eval_03_hitl_colleague_reminder_consent_gate",
+      "description": "Interactive run pauses at RequestInput gate and resumes only for approved colleague emails.",
+      "initial_state": {
+        "unattended_schedule": false
+      },
+      "user_prompt": "Run interactive Kuwait CAL dashboard and stage colleague reminders.",
+      "resume_approval": {
+        "approved_colleague_emails": [
+          "ehsanr@google.com",
+          "ljammal@google.com"
+        ],
+        "delivery_mode": "create_draft"
+      },
+      "expected_assertions": {
+        "requires_interrupt": "adk_request_input",
+        "approved_count_after_resume": 2,
+        "delivery_mode": "create_draft"
+      }
+    },
+    {
+      "case_id": "eval_04_strategic_model_routing_and_escalation",
+      "description": "Verifies gemini-3.8-flash for fast extraction, gemini-3.1-pro for deep reasoning/judge, and dynamic escalation on retry.",
+      "expected_routing": {
+        "todo_and_reminders_agent": "gemini-3.8-flash",
+        "afa_financials_agent": "gemini-3.8-flash",
+        "pso_risks_agent": "gemini-3.1-pro",
+        "innovation_radar_agent": "gemini-3.1-pro",
+        "llm_judge_agent": "gemini-3.1-pro",
+        "revise_dashboard_agent": "gemini-3.1-pro"
+      }
+    },
+    {
+      "case_id": "eval_05_observability_pii_and_persistent_memory",
+      "description": "Verifies OpenTelemetry spans, structured JSON intent/outcome logs, PII redaction, SQLite persistence, context compaction, and async semantic memory consolidation.",
+      "pii_probe_samples": [
+        "Contact clappaert@google.com or citizen Civil ID 289051201234 at +965 5555 1234 with Bearer TEST_OAUTH_TOKEN_SAMPLE_12345"
+      ],
+      "expected_assertions": {
+        "must_not_contain": [
+          "289051201234",
+          "+965 5555 1234",
+          "TEST_OAUTH_TOKEN_SAMPLE_12345"
+        ],
+        "min_consolidated_facts": 6
+      }
+    }
+  ]
+}
